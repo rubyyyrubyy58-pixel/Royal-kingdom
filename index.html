@@ -1,1 +1,261 @@
 
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Royal Kingdom</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;padding:15px;color:white;text-align:center;
+ font-family:Arial,sans-serif;
+ background:linear-gradient(160deg,#241044,#673b91,#29134e);
+}
+h1{color:#ffdf80;text-shadow:0 3px #693b28;font-size:30px}
+.panel{
+ background:#ffffff20;border:2px solid #ffffff35;
+ border-radius:16px;padding:12px;margin:12px auto;
+ max-width:430px;
+}
+.stats{display:flex;justify-content:space-around;font-weight:bold}
+#board{
+ display:grid;grid-template-columns:repeat(8,1fr);
+ gap:4px;background:#301b50;padding:7px;
+ border:5px solid #d9a94f;border-radius:15px;
+ max-width:430px;margin:auto;touch-action:manipulation;
+}
+.cell{
+ aspect-ratio:1;border-radius:9px;display:grid;
+ place-items:center;font-size:clamp(18px,6vw,29px);
+ background:#ffffff18;cursor:pointer;
+}
+.gem{
+ width:88%;height:88%;display:grid;place-items:center;
+ border-radius:28%;border:2px solid #ffffff70;
+ box-shadow:inset 0 3px 5px #ffffff80,0 3px 4px #0005;
+}
+.c0{background:linear-gradient(135deg,#ff9caa,#dc2455)}
+.c1{background:linear-gradient(135deg,#8ceaff,#1675d2)}
+.c2{background:linear-gradient(135deg,#b1ff91,#259d4d)}
+.c3{background:linear-gradient(135deg,#fff09b,#e69a20)}
+.c4{background:linear-gradient(135deg,#e2adff,#8535c5)}
+.selected{outline:3px solid white;transform:scale(1.08)}
+button{
+ border:0;border-radius:12px;padding:12px;margin:5px;
+ background:linear-gradient(#ffe99c,#ffc54c);
+ color:#49265c;font-weight:bold;font-size:14px;
+}
+#message{min-height:24px;color:#ffe69b;font-weight:bold}
+#shop{display:none}
+.item{display:block;width:100%;margin:9px 0}
+</style>
+</head>
+<body>
+
+<h1>👑 ROYAL KINGDOM 👑</h1>
+<p>¡Construye tu reino combinando joyas!</p>
+
+<div class="panel stats">
+ <div>⭐ Nivel<br><span id="level">1</span></div>
+ <div>💎 Objetivo<br><span id="target">18</span></div>
+ <div>👣 Movimientos<br><span id="moves">25</span></div>
+ <div>🪙 Monedas<br><span id="coins">120</span></div>
+</div>
+
+<div class="panel">
+ <div>Joyas recogidas: <span id="score">0</span></div>
+</div>
+
+<div id="board"></div>
+<p id="message">¡Combina tres joyas iguales!</p>
+
+<button onclick="reward()">🎁 Premio gratuito</button>
+<button onclick="openShop()">🛍️ Tienda</button>
+<button onclick="restart()">🔄 Reiniciar</button>
+
+<div class="panel" id="shop">
+ <h2>👑 Tienda Real</h2>
+ <p>Productos de demostración, sin pagos reales.</p>
+ <button class="item" onclick="buy(100)">🪙 100 monedas — 0,99 € (demo)</button>
+ <button class="item" onclick="buy(350)">💰 350 monedas — 2,99 € (demo)</button>
+ <button class="item" onclick="buy(700)">💎 700 monedas — 4,99 € (demo)</button>
+ <button onclick="closeShop()">Cerrar</button>
+</div>
+
+<script>
+const SIZE=8;
+let grid=[],selected=null,moves=25,score=0;
+let level=1,coins=120,target=18,busy=false;
+let rewardUsed=false;
+
+const board=document.getElementById("board");
+const message=document.getElementById("message");
+const random=()=>Math.floor(Math.random()*5);
+
+function createBoard(){
+ grid=[];
+ for(let r=0;r<SIZE;r++){
+  grid[r]=[];
+  for(let c=0;c<SIZE;c++){
+   let v;
+   do{
+    v=random();
+   }while(
+    (c>=2&&grid[r][c-1]===v&&grid[r][c-2]===v)||
+    (r>=2&&grid[r-1][c]===v&&grid[r-2][c]===v)
+   );
+   grid[r][c]=v;
+  }
+ }
+ render();
+ update();
+}
+
+function render(){
+ board.innerHTML="";
+ for(let r=0;r<SIZE;r++){
+  for(let c=0;c<SIZE;c++){
+   const cell=document.createElement("div");
+   cell.className="cell";
+   const gem=document.createElement("div");
+   gem.className="gem c"+grid[r][c];
+   gem.textContent=["♥","◆","✦","★","●"][grid[r][c]];
+   if(selected&&selected.r===r&&selected.c===c)
+    gem.classList.add("selected");
+   cell.appendChild(gem);
+   cell.onclick=()=>tap(r,c);
+   board.appendChild(cell);
+  }
+ }
+}
+
+function matches(){
+ let found=new Set();
+ for(let r=0;r<SIZE;r++){
+  for(let c=0;c<SIZE;c++){
+   let v=grid[r][c],run=[c];
+   for(let x=c+1;x<SIZE&&grid[r][x]===v;x++)run.push(x);
+   if(run.length>=3)run.forEach(x=>found.add(r*SIZE+x));
+  }
+ }
+ for(let c=0;c<SIZE;c++){
+  for(let r=0;r<SIZE;r++){
+   let v=grid[r][c],run=[r];
+   for(let y=r+1;y<SIZE&&grid[y][c]===v;y++)run.push(y);
+   if(run.length>=3)run.forEach(y=>found.add(y*SIZE+c));
+  }
+ }
+ return [...found];
+}
+
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+
+async function tap(r,c){
+ if(busy||moves<=0||score>=target)return;
+ if(!selected){
+  selected={r,c};render();return;
+ }
+ let a=selected;
+ selected=null;
+ if(Math.abs(a.r-r)+Math.abs(a.c-c)!==1){
+  selected={r,c};render();return;
+ }
+ busy=true;
+ [grid[a.r][a.c],grid[r][c]]=
+ [grid[r][c],grid[a.r][a.c]];
+ if(matches().length===0){
+  [grid[a.r][a.c],grid[r][c]]=
+  [grid[r][c],grid[a.r][a.c]];
+  message.textContent="¡Prueba otra combinación!";
+  render();busy=false;return;
+ }
+ moves--;
+ await clearMatches();
+ busy=false;
+ update();
+ checkEnd();
+}
+
+async function clearMatches(){
+ let combo=0;
+ while(true){
+  let found=matches();
+  if(!found.length)break;
+  combo++;
+  score+=found.length;
+  if(found.length>=4)score+=3;
+  message.textContent=combo>1?"¡COMBO! ✨":"¡Excelente! 💎";
+  found.forEach(i=>{
+   grid[Math.floor(i/SIZE)][i%SIZE]=-1;
+  });
+  render();
+  await wait(180);
+  for(let c=0;c<SIZE;c++){
+   let values=[];
+   for(let r=SIZE-1;r>=0;r--)
+    if(grid[r][c]!==-1)values.push(grid[r][c]);
+   for(let r=SIZE-1;r>=0;r--)
+    grid[r][c]=values[SIZE-1-r]??random();
+  }
+  render();
+  await wait(180);
+ }
+ update();
+}
+
+function update(){
+ document.getElementById("level").textContent=level;
+ document.getElementById("target").textContent=target;
+ document.getElementById("moves").textContent=moves;
+ document.getElementById("coins").textContent=coins;
+ document.getElementById("score").textContent=score;
+}
+
+function checkEnd(){
+ if(score>=target){
+  coins+=30;
+  message.textContent="👑 ¡NIVEL SUPERADO! +30 monedas";
+  moves=0;
+  update();
+  setTimeout(()=>{
+   if(confirm("¡Ganaste! ¿Quieres jugar el siguiente nivel?")){
+    level++;target+=8;restart();
+   }
+  },300);
+ }else if(moves<=0){
+  message.textContent="¡Fin de partida! Prueba otra vez.";
+ }
+}
+
+function restart(){
+ moves=25;score=0;rewardUsed=false;
+ createBoard();
+ message.textContent="¡A por el siguiente desafío!";
+}
+
+function reward(){
+ if(rewardUsed){
+  message.textContent="Ya has recibido el premio de esta partida.";
+  return;
+ }
+ rewardUsed=true;
+ coins+=25;update();
+ message.textContent="🎁 ¡Has ganado 25 monedas gratis!";
+}
+
+function openShop(){
+ document.getElementById("shop").style.display="block";
+}
+function closeShop(){
+ document.getElementById("shop").style.display="none";
+}
+function buy(amount){
+ coins+=amount;update();
+ message.textContent="Monedas de prueba añadidas. No se realizó ningún pago.";
+}
+createBoard();
+</script>
+</body>
+</html>
